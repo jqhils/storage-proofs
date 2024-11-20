@@ -1,0 +1,3 @@
+[submodule "contracts/lib/evm-storage-proofs"]
+	path = contracts/lib/evm-storage-proofs
+	url = https://github.com/aragon/evm-storage-proofs

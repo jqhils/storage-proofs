@@ -1,0 +1,59 @@
+Python 3.11.8 (main, Feb  6 2024, 21:21:21) [Clang 15.0.0 (clang-1500.1.0.2.5)] on darwin
+Type "help", "copyright", "credits" or "license" for more information.
+>>> from verify_ecdsa import *
+>>> w3
+<web3.main.Web3 object at 0x10323e190>
+>>> tx_hash = '0xb385a7dec7ce9f02fa57c07f7ed88f44864dfc8449e5a4f768f96a32e606ae74'
+>>> tx = w3.eth.get_transaction(tx_hash)
+>>> getHashedMessage(tx)
+b"\xabZ\xfe\xcd'\xef\xb7\xa8\x9d\xfd\xc8\x1b\x0c\x99\xfa\x93\x94\xb2\x177\xdc}\x03\xd6\xfb\xa7kr\xc4\xcb\xdc\xeb"
+>>> message_hash = getHashedMessage(tx)
+>>> message_hash.hex()
+'ab5afecd27efb7a89dfdc81b0c99fa9394b21737dc7d03d6fba76b72c4cbdceb'
+>>> chain_id = tx['chainId'] if 'chainId' in tx else 1
+>>> nonce = tx['nonce']
+>>> max_priority_fee_per_gas = tx['maxPriorityFeePerGas'] if 'maxPriorityFeePerGas' in tx else -1
+>>> max_fee_per_gas = tx['maxFeePerGas'] if 'maxFeePerGas' in tx else -1
+>>> gasPrice = tx['gasPrice'] if 'gasPrice' in tx else -1
+>>> gasLimit = tx['gas']
+>>> to = to_bytes(hexstr=tx['to']) if tx['to'] else b''
+>>> value = tx['value']
+>>> data = to_bytes(hexstr=tx['input'].hex())
+>>> access_list = tx['accessList'] if 'accessList' in tx else []
+>>> 
+>>> tx_type = to_bytes(tx['type'])
+>>> fields_values = [
+...   chain_id,
+...   nonce,
+...   max_priority_fee_per_gas,
+...   max_fee_per_gas,
+...   gasLimit,
+...   to if to else b'',  # Address (as bytes) or empty
+...   value,
+...   data if data else b'',  # Data (as bytes) or empty
+...   access_list
+... ]
+>>> 
+>>> fields_sedes = [
+...   big_endian_int,  # chainId
+...   big_endian_int,  # nonce
+...   big_endian_int,  # maxPriorityFeePerGas
+...   big_endian_int,  # maxFeePerGas
+...   big_endian_int,  # gas
+...   binary,          # to
+...   big_endian_int,  # value
+...   binary,          # input
+...   CountableList(List([binary, CountableList(List([binary, big_endian_int]))]))  # accessList
+... ]
+>>> encoded_transaction = rlp.encode(fields_values, sedes=List(fields_sedes))
+>>> encoded_transaction
+b"\xf4\x01?\x84\x01\xbb\x03\xf5\x85\x13\xab\xa7\xb2r\x82\xb1j\x94\xc0*\xaa9\xb2#\xfe\x8d\n\x0e\\O'\xea\xd9\x08<ul\xc2\x887\x82\xda\xce\x9d\x90\x00\x00\x84\xd0\xe3\r\xb0\xc0"
+>>> encoded_transaction.hex()
+'f4013f8401bb03f58513aba7b27282b16a94c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2883782dace9d90000084d0e30db0c0'
+>>> ???=f4, chain_id=01, nonce=3f,
+KeyboardInterrupt
+>>> len('013f8401bb03f58513aba7b27282b16a94c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2883782dace9d90000084d0e30db0c0')/2
+52.0
+>>> len('013f8401bb03f58513aba7b27282b16a94c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2883782dace9d90000084d0e30db0c0')
+104
+>>> len('f877013f8401bb03f58513aba7b27282b16a94c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2883782dace9d90000084d0e30db0c080a0f6ba76d05a48cad3873e9192124177e7bca4c3e4274b736f420a7ef4cb0d6ed3a071494881f90ae3e716c138d6969d88c061cacc4bea8483a49924f480a4689fc5')/2

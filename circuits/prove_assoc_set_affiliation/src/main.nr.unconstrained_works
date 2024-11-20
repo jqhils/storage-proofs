@@ -1,0 +1,208 @@
+use dep::ethereum::receipt::{get_receipt, TxReceiptWithinBlock};
+use dep::ethereum::transaction::{get_transaction, get_transaction_oracle, get_transaction_unconstrained_M, TxPartial, TxType, TransactionWithinBlock, ForeignCallTransaction, MAX_PREFIXED_KEY_NIBBLE_LEN, MAX_DEPTH_NO_LEAF};
+
+use dep::ethereum::verifiers::{
+    transaction::rlp::assert_tx_rlp_equals,
+    tx_helpers::{idx::assert_tx_idx_equals, split::split_into_tx_type_and_rlp}
+};
+
+use dep::ethereum::misc::{types::HASH_LEN, bytes::right_pad, fragment::Fragment};
+use dep::ethereum::header::get_header;
+use dep::ethereum::verifiers::transaction::{verify_tx};
+use dep::ethereum::merkle_patricia_proofs::proof::{ProofInput, verify_merkle_proof, Proof, Node, MAX_NODE_LEN};
+
+use dep::ethereum::rlp::decode::decode_list;
+use dep::ethereum::rlp::types::{RlpList, RlpFragment};
+
+use dep::std::ecdsa_secp256k1::verify_signature;
+use dep::std::hash::keccak256;
+
+global MAX_DATA_LEN = 1000;
+global MAX_VALUE_LEN_M = 1000; // Values taken from txProofConfigM in tx.ts. (same as receipt.ts.)
+global MAX_LEAF_LEN_M = 1011;
+
+fn form_signature (
+    r: [u8; 32],
+    s: [u8; 32],
+) -> [u8; 64] {
+    let mut result: [u8; 64] = [0; 64];
+    for i in 0..32 {
+        result[i] = r[i];
+    }
+    for i in 0..32 {
+        result[32+i] = s[i];
+    }
+    result
+}
+
+// Takes a u8 representing the length of the data and returns a RLP-encoded, length-prefixed hex representation of the length
+fn length_to_bytes (
+    length: u8,
+) -> ([u8; 10], u8) {
+    let mut result: [u8; 10] = [0; 10];
+    let mut length_length: u8 = 0;
+
+    if (length <= 55) {
+        result[0] = 192 + length;
+    } else {
+        let mut temp = length;
+        length_length = 0;
+        
+        for _ in 0..8 {
+            if temp > 1 {
+                temp = temp >> 1;
+                length_length += 1;
+            }
+        }
+
+        if 1 << length_length < length {
+            length_length += 1;
+        }
+
+        result[0] = 247 + length_length;
+        for i in 0..length_length {
+            result[i+1] = (length >> (8 * (length_length - i - 1))) as u8;
+        }
+    }
+    (result, length_length + 1)
+}
+
+// global MAX_PREFIXED_KEY_NIBBLE_LEN = 8; // (MAX_KEY_LEN + 1) * 2
+global RECEIPT_MAX_PREFIXED_KEY_NIBBLE_LEN = MAX_PREFIXED_KEY_NIBBLE_LEN;
+
+global RECEIPT_MAX_VALUE_LEN_M = MAX_VALUE_LEN_M;
+
+// global MAX_DEPTH_NO_LEAF = 6;
+global RECEIPT_MAX_DEPTH_NO_LEAF = MAX_DEPTH_NO_LEAF;
+global RECEIPT_NODES_LEN = MAX_NODE_LEN * RECEIPT_MAX_DEPTH_NO_LEAF;
+
+global RECEIPT_MAX_LEAF_LEN_M = MAX_LEAF_LEN_M;
+
+global RECEIPT_PROOF_LEN_M = RECEIPT_NODES_LEN + RECEIPT_MAX_LEAF_LEN_M + 1;
+
+global RECEIPT_PROOF_INPUT_LEN_M = RECEIPT_MAX_PREFIXED_KEY_NIBBLE_LEN + RECEIPT_MAX_VALUE_LEN_M + RECEIPT_PROOF_LEN_M;
+global TX_PROOF_INPUT_LEN_M = RECEIPT_PROOF_INPUT_LEN_M;
+
+global MAX_ENCODED_LEN = 1000; // I think
+
+struct FieldLayout {
+    field_count: u64,
+    nonce_idx: u64,
+    gas_limit_idx: u64,
+    to_idx: u64,
+    signature_idx: u64,
+}
+
+global TX_TYPE_TO_FIELD_LAYOUT = [
+    FieldLayout {field_count: 9, nonce_idx: 0, gas_limit_idx: 2, to_idx: 3, signature_idx: 6},
+    FieldLayout {field_count: 11, nonce_idx: 1, gas_limit_idx: 3, to_idx: 4, signature_idx: 8},
+    FieldLayout {field_count: 12, nonce_idx: 1, gas_limit_idx: 4, to_idx: 5, signature_idx: 9},
+    FieldLayout {field_count: 14, nonce_idx: 1, gas_limit_idx: 4, to_idx: 5, signature_idx: 11},
+];
+
+global MAX_TX_FIELDS_COUNT = 14;
+
+type ProofInputSerialized<LEN> = [Field; LEN];
+
+// #[oracle(get_transaction)]
+// unconstrained fn get_transaction_oracle<MAX_DATA_LEN, PROOF_INPUT_LEN>(
+//     _chain_id: Field,
+//     _block_number: u64,
+//     _tx_idx: Field
+// ) -> (TxType, ForeignCallTransaction<MAX_DATA_LEN>, ProofInputSerialized<PROOF_INPUT_LEN>) {}
+
+
+
+unconstrained fn main(
+    chain_id: pub Field,
+    block_number: pub u64,
+    tx_idx: pub Field,
+    pub_key_x: [u8; 32],
+    pub_key_y: [u8; 32],
+    hashed_message: [u8; 32],
+    signature: [u8; 64],
+    transaction_with_block: TransactionWithinBlock<MAX_DATA_LEN>
+// ) -> pub TransactionWithinBlock<MAX_DATA_LEN> {
+// ) -> pub (TxType, TxPartial<MAX_DATA_LEN>, ProofInput<MAX_PREFIXED_KEY_NIBBLE_LEN, MAX_VALUE_LEN_M, MAX_DEPTH_NO_LEAF, MAX_LEAF_LEN_M>) {
+// ) -> pub Fragment<MAX_ENCODED_LEN, u8> {
+// ) -> pub (u8, Fragment<MAX_ENCODED_LEN, u8>) {
+// ) -> pub (RlpList<MAX_TX_FIELDS_COUNT>, Fragment<MAX_ENCODED_LEN, u8>) {
+// ) -> pub ([u8; 2000], u8) {
+) -> pub [u8; 32] {
+    // Normally would fetch the transaction via oracle
+    // let transaction = get_transaction(chain_id, block_number, tx_idx);
+    let transaction_partial = transaction_with_block.transaction;
+
+
+    // let (tx_type, transaction, tx_proof_input): (TxType, ForeignCallTransaction<MAX_DATA_LEN>, ProofInputSerialized<TX_PROOF_INPUT_LEN_M>)
+    //     = get_transaction_oracle(chain_id, block_number, tx_idx);
+    let (tx_type, transaction, tx_proof_input): (TxType, TxPartial<MAX_DATA_LEN>, ProofInput<MAX_PREFIXED_KEY_NIBBLE_LEN, MAX_VALUE_LEN_M, MAX_DEPTH_NO_LEAF, MAX_LEAF_LEN_M>)
+         = get_transaction_unconstrained_M(chain_id, block_number, tx_idx);
+    let value = right_pad(tx_proof_input.value).storage;
+    let encoded_tx = Fragment::from_array(value); // Raw Transaction Hex (etherscan)
+    
+    let is_legacy = tx_type == 0;
+    let (actual_tx_type, tx_rlp) = split_into_tx_type_and_rlp(is_legacy, encoded_tx);
+    let rlp_list: RlpList<MAX_TX_FIELDS_COUNT> = decode_list(tx_rlp);
+    let FieldLayout {field_count, nonce_idx, gas_limit_idx, to_idx, signature_idx} = TX_TYPE_TO_FIELD_LAYOUT[tx_type];
+
+    
+    // Derive the RLP-encoded representation of the unsigned transaction by removing the signature field
+    let mut unsigned_tx_rlp: [u8; 256] = [0; 256]; // TODO: Change to MAX_ENCODED_LEN + buffer
+    let mut length: u8 = 0;
+    for i in 0..field_count {
+        if i < signature_idx {
+            // If field requires more than 1 byte, add the length prefix
+            if rlp_list.get(i).length > 1 {
+                unsigned_tx_rlp[length] = (rlp_list.get(i).length + 128) as u8;
+                length += 1;
+            }
+            // Copy the field
+            for j in 0..rlp_list.get(i).length {
+                unsigned_tx_rlp[length] = tx_rlp.at(rlp_list.get(i).offset + j);
+                // unsigned_tx_rlp[rlp_list.get(i).offset + j] = rlp_list.get(i).storage[j];
+                length += 1;
+            }
+        }
+    }
+
+    // Add the length prefix for the RLP-encoded unsigned transaction
+    let (length_prefix, length_prefix_length) = length_to_bytes(length);
+    let unsigned_tx_length = length + length_prefix_length;
+    let mut unsigned_tx:[u8; 2000] = [0; 2000];
+    for i in 0..length_prefix_length {
+        unsigned_tx[i] = length_prefix[i];
+    }
+    for i in 0..length {
+        unsigned_tx[i + length_prefix_length] = unsigned_tx_rlp[i];
+    }
+
+    // if transaction type is non-legacy, append the type to the front of the unsigned transaction
+    let mut final_unsigned_tx = [0; 2000];
+    let mut final_unsigned_tx_length = unsigned_tx_length;
+    if !is_legacy {
+        final_unsigned_tx[0] = tx_type;
+        for i in 0..unsigned_tx_length {
+            final_unsigned_tx[i + 1] = unsigned_tx[i];
+        }
+        final_unsigned_tx_length += 1;
+    } else {
+        for i in 0..unsigned_tx_length {
+            final_unsigned_tx[i] = unsigned_tx[i];
+        }
+    }
+
+    // Calculate the hash of the unsigned transaction
+    let message_hash: [u8; 32] = keccak256(final_unsigned_tx, final_unsigned_tx_length as u32);
+    
+    // Verify the signature
+    assert(verify_signature(pub_key_x, pub_key_y, form_signature(transaction_partial.r, transaction_partial.s), message_hash));
+
+    // (unsigned_tx, unsigned_tx_length)
+    message_hash
+
+    // (tx_type, transaction, tx_proof_input)
+    // encoded_tx
+    // (actual_tx_type, tx_rlp)
+    // (rlp_list, tx_rlp.subfragment(rlp_list.get(nonce_idx).offset, rlp_list.get(nonce_idx).length))
+}

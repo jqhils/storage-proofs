@@ -1,0 +1,85 @@
+# macOS files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# macOS folder attributes
+.Spotlight-V100
+.Trashes
+.VolumeIcon.icns
+com.apple.timemachine.donotpresent
+
+# macOS metadata
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# General files
+*.log
+*.tmp
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.env
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+/.pnpm-store
+
+# Nuxt.js and Vue
+.nuxt/
+*.nuxt/
+dist/
+coverage/
+*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editor settings and environment files
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+*.code-workspace
+
+# Git
+*.orig
+*.rej
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Target directories for various build tools
+**/target/
+target/
+out/
+
+# Temporary and backup files
+*.bak
+*.tmp
+~$*
+
+# Ignore other OS generated files
+.DS_Store
